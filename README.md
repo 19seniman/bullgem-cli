@@ -1,35 +1,6 @@
 # bullgem.js — CLI Bullgem (gem.bullshot.io)
 
-Login pakai private key (EIP-191) atau email + OTP, lalu otomatis klaim quest dan jalankan mining.
-
-## Anti-bot / keamanan akun
-
-Script tidak menembak server sekaligus. Yang dipasang:
-
-| Mekanisme | Default |
-|---|---|
-| Jeda acak antar request | 700–2200 ms (`HUMAN_MIN_MS`, `HUMAN_MAX_MS`) |
-| Interval loop diacak | poll ±35% (`POLL_SECONDS`) |
-| Retry 429/5xx | maks 3×, backoff eksponensial + jitter |
-| Berhenti saat 401 | minta JWT baru, tidak mengulang |
-| Berhenti setelah 5 error berturut | supaya tidak terlihat seperti bot |
-| Batas putaran | `MAX_ROUNDS` (0 = tanpa batas) |
-
-Atur di `.env`:
-
-```ini
-HUMAN_MIN_MS=700
-HUMAN_MAX_MS=2200
-MAX_RETRY=3
-MAX_ROUNDS=0
-NO_PACING=0
-```
-
-Saran pemakaian: satu akun per IP, jangan jalan 24/7 tanpa jeda, dan hentikan kalau server mulai membalas 429 berulang. Jeda manusiawi menurunkan risiko deteksi, tapi tidak menjamin akun bebas dari sanksi — aturan platform tetap berlaku.
-
-## Tampilan
-
-Setiap kali dijalankan, CLI menampilkan banner:
+Login cukup pakai **JWT token** dari browser — tanpa private key, tanpa email/OTP. Setelah itu quest dikerjakan otomatis dan mining berjalan sendiri.
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -40,8 +11,6 @@ Setiap kali dijalankan, CLI menampilkan banner:
 └──────────────────────────────────────────────┘
 ```
 
-Banner otomatis mati saat output dialihkan ke file/pipe atau `NO_COLOR=1`. Pakai `--quiet` untuk mematikannya secara manual.
-
 ## Instalasi
 
 ```bash
@@ -51,166 +20,124 @@ npm install
 cp .env.example .env
 ```
 
-Buka `.env`, isi salah satu:
+## Login (JWT)
+
+1. Buka `https://gem.bullshot.io` dan login seperti biasa
+2. **F12** → **Application** → **Local Storage** → `https://gem.bullshot.io`
+3. Copy nilai key **`rg_jwt_token`** (string `eyJ...`)
+4. Ambil juga cookie Cloudflare: **Network** → filter `gemapi` → klik satu request → **Request Headers** → copy baris **`cookie:`**
+5. Isi `.env`:
 
 ```ini
-PRIVATE_KEY=0x....        # wallet login (tanda tangan lokal)
-EMAIL=kamu@mail.com       # atau login email + OTP
+JWT=eyJhbGciOi...
+CF_COOKIES=cf_clearance=...; __cf_bm=...
 ```
 
-Lalu login dan cek akun:
+Cek koneksi:
 
 ```bash
-node bullgem.js login
+node bullgem.js debug     # harapan: HTTP 200 · application/json
 node bullgem.js status
 ```
 
-Kalau `login` sukses tapi `status` gagal 401, jalankan `node bullgem.js login` lagi — token JWT disimpan di `.tokens.json` dan berlaku terbatas.
+Kalau `debug` membalas **401**, JWT kedaluwarsa — ambil ulang. Kalau **403**, cookie Cloudflare kedaluwarsa (±30 menit) — ambil ulang. Ambil keduanya sekaligus supaya tidak bolak-balik.
 
 ## Menjalankan
 
 ```bash
-node bullgem.js quests          # lihat daftar quest
-node bullgem.js quests --auto   # kerjakan + klaim otomatis
-node bullgem.js locations       # daftar tambang
-node bullgem.js mine            # loop mining (klaim → mulai → tunggu)
-node bullgem.js auto            # quest otomatis + mining sekaligus
+node bullgem.js status             # gems · energy · power · level
+node bullgem.js quests --auto      # kerjakan + klaim quest
+node bullgem.js collect            # collect rewards + buka chest
+node bullgem.js mine               # loop: collect → enter mine → start digging
+node bullgem.js auto               # quest otomatis + loop mining
 ```
 
-Hentikan dengan `Ctrl+C`. Interval poll diatur `POLL_SECONDS` (default 30 detik).
+Hentikan dengan `Ctrl+C`.
 
-## Termux (Android)
+## Alur mining
 
-```bash
-pkg install nodejs git -y
-git clone https://github.com/19seniman/bullgem-cli.git
-cd bullgem-cli && npm install
-cp .env.example .env && nano .env
-node bullgem.js login
-termux-wake-lock
-node bullgem.js auto
-```
-
-## Alur "Enter mine" + "Start digging"
-
-`mine` menentukan cave dari kondisi akun, bukan menebak:
-
-1. `GET /user/me` → ambil `level`, `miningPower`, `energy` (script mencoba beberapa nama field: `energy`, `energyPoints`, `stats.energy`, …)
-2. `GET /mining/locations` → saring: `levelRequired <= level`, `miningPowerRequired <= power`, **`energyCost <= energy`**
-3. pilih yang `durationSeconds` paling panjang di antara yang terjangkau (reward terbaik)
-4. **Enter mine** → `GET /mining/locations/{id}/spots`, pilih spot yang tidak terkunci dan cocok level/power
+1. `GET /user/me` → `level`, `miningPower`, `energy`, `energyCapacity`
+2. `GET /mining/locations` → saring `levelRequired`, `miningPowerRequired`, **`energyCost <= energy`**
+3. pilih cave dengan `durationSeconds` terpanjang di antara yang terjangkau
+4. **Enter mine** → `GET /mining/locations/{id}/spots` → pilih spot terbaik yang terjangkau
 5. **Start digging** → `POST /mining/positions {locationId, spotId, strategy}`
-6. tunggu `endsAt` → `POST /mining/positions/{id}/claim` → ulang
+6. tunggu `endsAt` → **collect** → ulangi
 
-Kalau energy tidak cukup untuk cave termurah, loop **tidak** memaksa masuk: dia menghitung kekurangan EP (refill 1 EP / 2 menit) lalu menunggu selama itu.
+Energy tidak cukup? Script tidak memaksa masuk: dia menghitung kekurangan EP (refill 1 EP / 2 menit) lalu menunggu.
 
 ```bash
-node bullgem.js status              # level · energy · power
 node bullgem.js locations           # daftar cave + biaya EP
-node bullgem.js spots --location X  # daftar spot
-node bullgem.js mine --once         # satu siklus
-node bullgem.js mine                # loop
+node bullgem.js spots --location X  # daftar pintu masuk
+node bullgem.js mine --once         # satu siklus saja
 ```
 
-Override manual: `MINING_LOCATION`, `MINING_SPOT`, `MINING_STRATEGY` di `.env`.
+Override: `MINING_LOCATION`, `MINING_SPOT`, `MINING_STRATEGY` di `.env`.
 
 ## Collect rewards otomatis
 
-Setiap siklus, sebelum digging baru, script mengumpulkan semua hasil yang sudah selesai:
+Setiap siklus, sebelum digging baru:
 
-1. `GET /mining/positions` → semua posisi
-2. posisi `status: ready/completed` atau `endsAt` sudah lewat → `POST /mining/positions/{id}/claim`
-3. `GET /chests` → buka chest tersedia (`POST /chests/{id}/open`), melewati yang terkunci atau `opensAt` belum tiba
-4. baru masuk mine berikutnya
-
-Collect sekali tanpa menunggu:
-
-```bash
-node bullgem.js collect
-```
-
-Contoh output:
+1. posisi `ready`/`completed` atau `endsAt` lewat → `POST /mining/positions/{id}/claim`
+2. chest tersedia → `POST /chests/{id}/open` (melewati yang terkunci)
+3. baru masuk mine berikutnya
 
 ```
-collect rewards · Crystal Cavern ✓ · 12 GEMS · 3 item
+collect rewards · Greenstone Quarry ✓  gemsEarned 18.9
 chest silver-01 dibuka ✓
-selesai · 1 posisi, 1 chest
 ```
 
-## Login pakai JWT (tanpa private key)
+## Anti-bot / keamanan akun
 
-Cara paling ringan: pakai token yang sudah dibuat browser-mu.
-
-1. Login di `https://gem.bullshot.io`
-2. **F12** → **Application** → **Local Storage** → `https://gem.bullshot.io` → cari key **`rg_jwt_token`**
-3. Copy nilainya (string panjang `eyJ...`)
-4. Isi `.env`:
+| Mekanisme | Default |
+|---|---|
+| Jeda acak antar request | 700–2200 ms |
+| Interval loop diacak | poll ±35% |
+| Retry 429/5xx | maks 3×, backoff eksponensial |
+| Berhenti saat 401 | minta JWT baru, tidak mengulang |
+| Berhenti setelah 5 error berturut | tidak terlihat seperti bot |
+| Batas putaran | `MAX_ROUNDS` (0 = tanpa batas) |
 
 ```ini
-JWT=eyJhbGciOi...
+HUMAN_MIN_MS=700
+HUMAN_MAX_MS=2200
+MAX_RETRY=3
+MAX_ROUNDS=0
+NO_PACING=0
 ```
 
-atau sekali lewat CLI:
-
-```bash
-node bullgem.js login --jwt eyJhbGciOi...
-```
-
-Kalau `JWT` diisi, `PRIVATE_KEY` dan `EMAIL` diabaikan. Token kedaluwarsa sesuai masa berlaku dari server — kalau `status` membalas 401, ambil token baru dari browser.
-
-Kombinasi paling praktis untuk CLI tanpa browser: **`JWT` + `CF_COOKIES`** di `.env`, lalu `node bullgem.js mine`.
+Jeda manusiawi menurunkan risiko deteksi, bukan menghilangkannya. Satu akun per IP, jangan 24/7 tanpa jeda, dan `Ctrl+C` kalau server mulai membalas 429 berulang.
 
 ## Kalau kena 403 Cloudflare
 
-`gemapi.bullshot.io` dilindungi Cloudflare, jadi `fetch` dari Node (tanpa browser) ditolak walaupun dari jaringan rumah. Dua cara yang sah:
+`gemapi.bullshot.io` dilindungi Cloudflare, jadi `fetch` Node tanpa cookie browser selalu ditolak.
 
-**A. Userscript di browser (disarankan)**
+**A. Cookie untuk CLI (dipakai di atas)** — isi `CF_COOKIES` dari DevTools, berlaku ±30 menit dan terikat IP + User-Agent.
 
-`bullgem.user.js` berjalan **di dalam** halaman gem.bullshot.io, memakai sesi login web-mu, jadi tidak ada Cloudflare yang dilewati.
+**B. Userscript di browser** — `bullgem.user.js` berjalan di dalam halaman, memakai sesi web sendiri, tidak pernah kena Cloudflare. Install Tampermonkey → tempel isi file → buka `gem.bullshot.io` → panel kanan bawah → **start**.
 
-1. Install ekstensi **Tampermonkey**
-2. Buka dashboard Tampermonkey → **+** (script baru) → tempel isi `bullgem.user.js` → **Ctrl+S**
-3. Buka `https://gem.bullshot.io`, login seperti biasa
-4. Panel kecil di kanan bawah → **start**
-
-Panel itu akan: klaim posisi yang siap → mulai posisi baru kalau kosong → kerjakan quest, tiap 45 detik.
-
-**B. Cookie `cf_clearance` untuk CLI**
-
-Ambil cookie dari browser (DevTools → Application → Cookies → `gemapi.bullshot.io`), lalu isi `.env`:
-
-```ini
-CF_CLEARANCE=isi-cookie-di-sini
-```
-
-Batasan: berlaku ±30 menit, terikat IP dan User-Agent yang sama. Kalau habis, isi ulang. Ini memakai sesi browser-mu sendiri, bukan menembus proteksi.
-
-## API yang dipakai (hasil baca bundle produksi)
+## API yang dipakai
 
 Base: `https://gemapi.bullshot.io/api`
 
 | Fitur | Method | Path | Body |
 |---|---|---|---|
-| Nonce wallet | POST | `/auth/nonce` | `{walletAddress}` |
-| Login wallet | POST | `/auth/login` | `{walletAddress, signature, message, refCode}` |
-| Email mulai | POST | `/auth/email/start` | `{email}` |
-| Email verifikasi | POST | `/auth/email/verify` | `{email, code}` → `{token, user}` |
-| Profil | GET | `/user/me`, `/profile/me` | — |
+| Profil | GET | `/user/me` | — |
 | Saldo | GET | `/user/balance` | — |
 | Tambang | GET | `/mining/locations` | — |
 | Spot | GET | `/mining/locations/{id}/spots` | — |
 | Posisi | GET | `/mining/positions` | — |
-| Mulai mining | POST | `/mining/positions` | `{locationId, spotId?, strategy?, gear?, consumables?}` |
-| Klaim hasil | POST | `/mining/positions/{id}/claim` | — |
+| Start digging | POST | `/mining/positions` | `{locationId, spotId?, strategy?}` |
+| Collect | POST | `/mining/positions/{id}/claim` | — |
 | Quest list | GET | `/quests` | — |
 | Quest mulai | POST | `/quests/start` | `{questId}` |
 | Quest klaim | POST | `/quests/claim` | `{questId, tweetUrl}` |
+| Chest | GET/POST | `/chests`, `/chests/{id}/open` | — |
 
-Model auth: JWT Bearer (`rg_jwt_token` di web), plus header `X-Wallet-Address` untuk upload. Pesan tanda tangan: `Sign in to Bull GEM on Base: <nonce>`.
+Auth: `Authorization: Bearer <JWT>` (localStorage `rg_jwt_token`).
 
-## Catatan penting
+## Catatan
 
-- **Cloudflare**: `gemapi.bullshot.io` dilindungi Cloudflare. Dari VPS/datacenter, request JSON dibalas halaman `Just a moment…` (403). Jalankan dari jaringan rumah; script menampilkan pesan jelas kalau ini terjadi.
-- **Private key**: hanya dibaca dari `.env` lokal, dipakai untuk `signMessage` di mesin sendiri. Script tidak pernah mencetak atau mengirimnya. Jangan pakai wallet utama — pakai wallet khusus game.
-- **Quest bergantung platform**: klaim quest Twitter/X butuh `--tweet-url`; quest lain bisa diklaim langsung.
-- **ToS**: cek aturan Bullgem soal otomasi sebelum dipakai jangka panjang; akun yang dianggap bot bisa dibatasi.
+- Token JWT disimpan di `.tokens.json` (mode 600) dan tidak pernah di-commit.
+- `PRIVATE_KEY` dan `EMAIL` masih didukung kode lama, tapi tidak dipakai lagi — JWT lebih aman karena bisa dicabut server.
+- Quest Twitter/X butuh `--tweet-url`; quest lain diklaim langsung.
+- Cek aturan Bullgem soal otomasi sebelum dipakai jangka panjang.
