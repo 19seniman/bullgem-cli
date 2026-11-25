@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const API = 'https://gemapi.bullshot.io/api';
 const TOKENS = path.join(HERE, '.tokens.json');
+const STATE = path.join(HERE, '.state.json');
 const argv = process.argv.slice(2);
 const cmd = argv[0] || 'help';
 const arg = (k, d = null) => {
@@ -72,6 +73,14 @@ async function humanPause() {
 }
 
 /* ---------- tokens ---------- */
+function loadState() {
+  try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return {}; }
+}
+function saveState(st) {
+  fs.writeFileSync(STATE, JSON.stringify(st, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(STATE, 0o600); } catch {}
+}
+
 function loadTokens() {
   try { return JSON.parse(fs.readFileSync(TOKENS, 'utf8')); } catch { return {}; }
 }
@@ -470,7 +479,16 @@ async function miningLoop() {
     try {
       await claimAll();
       await collectChests();
-      if (ENV.AUTO_UPGRADE !== '0') await autoUpgrade().catch(() => null);
+      if (ENV.AUTO_UPGRADE !== '0') {
+        const hrs = Number(ENV.UPGRADE_INTERVAL_HOURS || 24);
+        const last = loadState().lastUpgradeAt;
+        const ageH = last ? (Date.now() - new Date(last).getTime()) / 3.6e6 : Infinity;
+        if (ageH >= hrs) {
+          await autoUpgrade().catch(() => null);
+        } else {
+          console.log(`upgrade ditunda · terakhir ${ageH.toFixed(1)}j lalu (jadwal ${hrs}j)`);
+        }
+      }
       const data = await api('/mining/positions');
       const list = Array.isArray(data) ? data : data?.positions || data?.data || [];
       const active = list.filter((p) => !isReady(p));
@@ -549,6 +567,9 @@ async function autoUpgrade(forceId = null) {
 
   const r = await api(`/upgrades/${pickUp.id}`, { method: 'POST' });
   console.log(`upgrade · ${pickUp.name || pickUp.id} +${pickUp.increment ?? '?'} · ${pickUp.cost} GEM · sisa ${gems - Number(pickUp.cost)}`);
+  const st = loadState();
+  st.lastUpgradeAt = new Date().toISOString();
+  saveState(st);
   return r;
 }
 
