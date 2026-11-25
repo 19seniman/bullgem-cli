@@ -111,6 +111,12 @@ async function loginEmail(email) {
 
 async function ensureLogin() {
   const t = loadTokens();
+
+  // JWT manual dari .env menang atas semuanya: tidak perlu private key / OTP
+  if (ENV.JWT && ENV.JWT !== t.token) {
+    saveTokens({ token: ENV.JWT.trim(), account: t.account || 'manual-jwt', mode: 'jwt', at: new Date().toISOString() });
+    console.log('memakai JWT dari .env');
+  }
   if (t.token) {
     try {
       await api('/user/balance');
@@ -264,7 +270,12 @@ async function quests(auto = false, tweetUrl = '') {
 /* ---------- main ---------- */
 try {
   if (cmd === 'login') {
-    if (ENV.PRIVATE_KEY) {
+    if (arg('--jwt') || ENV.JWT) {
+      const jwt = (arg('--jwt') || ENV.JWT).trim();
+      saveTokens({ token: jwt, account: 'manual-jwt', mode: 'jwt', at: new Date().toISOString() });
+      await api('/user/balance');
+      console.log('JWT diterima · sesi tersimpan di .tokens.json');
+    } else if (ENV.PRIVATE_KEY) {
       const r = await loginWallet(ENV.PRIVATE_KEY, ENV.REF_CODE);
       console.log(`login wallet OK · ${r.address}`);
     } else if (ENV.EMAIL || arg('--email')) {
@@ -337,6 +348,7 @@ try {
   node bullgem.js auto               quest otomatis + loop mining
   node bullgem.js whoami             cek sesi tersimpan
   node bullgem.js debug              diagnosa Cloudflare / cookie / token
+  node bullgem.js login --jwt <token>  pakai JWT dari browser (tanpa private key)
 
 .env: PRIVATE_KEY atau EMAIL, REF_CODE, MINING_LOCATION, POLL_SECONDS`);
   }

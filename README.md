@@ -51,6 +51,29 @@ termux-wake-lock
 node bullgem.js auto
 ```
 
+## Login pakai JWT (tanpa private key)
+
+Cara paling ringan: pakai token yang sudah dibuat browser-mu.
+
+1. Login di `https://gem.bullshot.io`
+2. **F12** → **Application** → **Local Storage** → `https://gem.bullshot.io` → cari key **`rg_jwt_token`**
+3. Copy nilainya (string panjang `eyJ...`)
+4. Isi `.env`:
+
+```ini
+JWT=eyJhbGciOi...
+```
+
+atau sekali lewat CLI:
+
+```bash
+node bullgem.js login --jwt eyJhbGciOi...
+```
+
+Kalau `JWT` diisi, `PRIVATE_KEY` dan `EMAIL` diabaikan. Token kedaluwarsa sesuai masa berlaku dari server — kalau `status` membalas 401, ambil token baru dari browser.
+
+Kombinasi paling praktis untuk CLI tanpa browser: **`JWT` + `CF_COOKIES`** di `.env`, lalu `node bullgem.js mine`.
+
 ## Kalau kena 403 Cloudflare
 
 `gemapi.bullshot.io` dilindungi Cloudflare, jadi `fetch` dari Node (tanpa browser) ditolak walaupun dari jaringan rumah. Dua cara yang sah:
