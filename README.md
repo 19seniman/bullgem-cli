@@ -23,7 +23,7 @@ nano .env
 1. Buka `https://gem.bullshot.io` dan login seperti biasa
 2. **F12** → **Application** → **Local Storage** → `https://gem.bullshot.io`
 3. Copy nilai key **`rg_jwt_token`** (string `eyJ...`)
-4. Ambil juga cookie Cloudflare: **Network** → filter `gemapi` → klik satu request → **Request Headers** → copy baris **`cookie:`**
+4. *(Opsional, kalau `debug` membalas 403)* ambil cookie Cloudflare: **Network** → filter `gemapi` → **Request Headers** → copy baris **`cookie:`**, lalu isi `CF_COOKIES=` di `.env`
 5. Isi `.env`:
 
 ```ini
