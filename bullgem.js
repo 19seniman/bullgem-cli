@@ -174,16 +174,61 @@ async function positions() {
   }
 }
 
+/* ---------- spots ("Enter mine") ---------- */
+async function getSpots(locationId) {
+  const d = await api(`/mining/locations/${locationId}/spots`).catch(() => null);
+  return arr(d, 'spots');
+}
+
+function levelOf(me) {
+  return Number(me?.level ?? me?.playerLevel ?? me?.user?.level ?? 0) || 0;
+}
+
+async function pickSpot(locationId) {
+  const spots = await getSpots(locationId);
+  if (!spots.length) return null;
+  const me = await api('/user/me').catch(() => null);
+  const lvl = levelOf(me);
+  const reqLvl = (sp) => sp.levelRequired ?? sp.requiredLevel ?? 0;
+  const power = (sp) => sp.miningPowerRequired ?? sp.miningPower ?? 0;
+  const free = spots.filter((sp) => sp.locked !== true && (!lvl || reqLvl(sp) <= lvl));
+  const pool = free.length ? free : spots.filter((sp) => sp.locked !== true);
+  const list = pool.length ? pool : spots;
+  // ambil yang paling "berat" (biasanya drop lebih baik) tapi tanpa requirement power tertinggi
+  list.sort((a, b) => power(a) - power(b));
+  return list[Math.min(1, list.length - 1)] || list[0];
+}
+
 /* ---------- mining ---------- */
 async function mineOnce({ locationId, spotId, strategy }) {
   const body = { locationId };
   if (spotId) body.spotId = spotId;
   if (strategy) body.strategy = strategy;
+
+  // "Enter mine": pilih spot dulu kalau belum ditentukan
+  if (!body.spotId) {
+    const sp = await pickSpot(locationId);
+    if (sp) {
+      body.spotId = sp.id;
+      console.log(`enter mine · spot ${sp.name || sp.id}${sp.vein ? ' (' + sp.vein + ')' : ''}`);
+    }
+  }
   try {
     const pos = await api('/mining/positions', { method: 'POST', body });
     console.log(`mining dimulai · ${pos.locationName || locationId} · id ${pos.id} · ends ${pos.endsAt || '?'}`);
     return pos;
   } catch (e) {
+    // spot ditolak → coba spot lain di cave yang sama
+    if (e.status === 400 && body.spotId && !/level/i.test(e.message)) {
+      const spots = (await getSpots(locationId)).filter((sp) => String(sp.id) !== String(body.spotId) && sp.locked !== true);
+      for (const sp of spots.slice(0, 3)) {
+        try {
+          const pos = await api('/mining/positions', { method: 'POST', body: { ...body, spotId: sp.id } });
+          console.log(`enter mine · spot ${sp.name || sp.id} ✓`);
+          return pos;
+        } catch {}
+      }
+    }
     // level kurang → turun ke lokasi yang lebih murah
     if (e.status === 400 && /level/i.test(e.message)) {
       const [data, me] = await Promise.all([api('/mining/locations'), api('/user/me').catch(() => null)]);
@@ -332,6 +377,16 @@ try {
   } else if (cmd === 'quests') {
     await ensureLogin();
     await quests(has('--auto'), arg('--tweet-url', ''));
+  } else if (cmd === 'spots') {
+    await ensureLogin();
+    const loc = arg('--location') || ENV.MINING_LOCATION;
+    const list = await getSpots(loc);
+    if (!list.length) console.log(`tidak ada spot untuk lokasi ${loc}`);
+    for (const sp of list) {
+      const lvl = sp.levelRequired ?? sp.requiredLevel ?? 0;
+      const pw = sp.miningPowerRequired ?? 0;
+      console.log(`${String(sp.id).padEnd(24)} ${(sp.name || '').padEnd(18)} vein ${String(sp.vein || '-').padEnd(10)} lvl ${String(lvl).padEnd(3)} power ${pw}${sp.locked ? ' · terkunci' : ''}`);
+    }
   } else if (cmd === 'mine') {
     await ensureLogin();
     if (has('--once')) {
@@ -375,6 +430,7 @@ try {
   node bullgem.js login              login pakai PRIVATE_KEY (atau EMAIL → OTP)
   node bullgem.js status             saldo + profil
   node bullgem.js locations          daftar tambang
+  node bullgem.js spots --location X daftar spot (pintu masuk) di satu tambang
   node bullgem.js positions          posisi mining aktif
   node bullgem.js quests             daftar quest
   node bullgem.js quests --auto      start & claim semua yang bisa

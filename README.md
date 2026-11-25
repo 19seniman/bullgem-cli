@@ -51,6 +51,25 @@ termux-wake-lock
 node bullgem.js auto
 ```
 
+## Alur "Enter mine"
+
+`mine` sekarang masuk ke tambang secara otomatis sebelum mulai:
+
+1. `GET /mining/locations` → pilih cave yang `requiredLevel <= level` kamu (yang tertinggi)
+2. `GET /mining/locations/{id}/spots` → pilih spot yang tidak terkunci
+3. `POST /mining/positions` `{locationId, spotId, strategy}` → posisi mining dibuat
+4. tunggu `endsAt` → `POST /mining/positions/{id}/claim`
+
+Kalau server menolak spot (`400`), script mencoba 3 spot lain di cave yang sama; kalau yang kurang level, dia turun ke cave lebih rendah.
+
+Lihat spot yang tersedia:
+
+```bash
+node bullgem.js spots --location <id_cave>
+```
+
+Untuk memaksa spot tertentu, isi `.env`: `MINING_SPOT=<id>`.
+
 ## Login pakai JWT (tanpa private key)
 
 Cara paling ringan: pakai token yang sudah dibuat browser-mu.
