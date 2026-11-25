@@ -55,7 +55,8 @@ async function api(endpoint, { method = 'GET', body, auth = true } = {}) {
     referer: 'https://gem.bullshot.io/',
     'user-agent': ENV.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   };
-  if (ENV.CF_CLEARANCE) headers.cookie = `cf_clearance=${ENV.CF_CLEARANCE}`;
+  if (ENV.CF_COOKIES) headers.cookie = ENV.CF_COOKIES.trim();
+  else if (ENV.CF_CLEARANCE) headers.cookie = `cf_clearance=${ENV.CF_CLEARANCE}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (auth && t.token) headers.authorization = `Bearer ${t.token}`;
   const res = await fetch(API + endpoint, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -299,6 +300,26 @@ try {
     console.log('mode auto: quest → mining loop');
     await quests(true, arg('--tweet-url', ''));
     await miningLoop();
+  } else if (cmd === 'debug') {
+    console.log('API   :', API);
+    console.log('cookie:', ENV.CF_COOKIES ? `CF_COOKIES (${ENV.CF_COOKIES.length} char)` : ENV.CF_CLEARANCE ? 'CF_CLEARANCE saja' : '(kosong)');
+    console.log('token :', loadTokens().token ? 'ada' : '(kosong)');
+    const t0 = Date.now();
+    const res = await fetch(API + '/quests', {
+      headers: {
+        accept: 'application/json',
+        origin: 'https://gem.bullshot.io',
+        referer: 'https://gem.bullshot.io/',
+        'user-agent': ENV.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        ...(loadTokens().token ? { authorization: `Bearer ${loadTokens().token}` } : {}),
+        ...(ENV.CF_COOKIES ? { cookie: ENV.CF_COOKIES.trim() } : ENV.CF_CLEARANCE ? { cookie: `cf_clearance=${ENV.CF_CLEARANCE}` } : {}),
+      },
+    });
+    const body = await res.text();
+    console.log(`HTTP ${res.status} · ${Date.now() - t0}ms · ${res.headers.get('content-type')}`);
+    console.log('cf-mitigated:', res.headers.get('cf-mitigated') || '-');
+    console.log('server      :', res.headers.get('server') || '-');
+    console.log('body        :', body.slice(0, 220).replace(/\s+/g, ' '));
   } else if (cmd === 'whoami') {
     const t = loadTokens();
     console.log(t.token ? `${t.account} (${t.mode}) sejak ${t.at}` : 'belum login');
@@ -315,6 +336,7 @@ try {
   node bullgem.js mine               loop mining (claim → start → tunggu)
   node bullgem.js auto               quest otomatis + loop mining
   node bullgem.js whoami             cek sesi tersimpan
+  node bullgem.js debug              diagnosa Cloudflare / cookie / token
 
 .env: PRIVATE_KEY atau EMAIL, REF_CODE, MINING_LOCATION, POLL_SECONDS`);
   }
