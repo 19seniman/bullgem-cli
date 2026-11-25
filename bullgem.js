@@ -149,8 +149,9 @@ async function status() {
   console.log('akun   :', loadTokens().account || '-');
   console.log('balance:', JSON.stringify(bal));
   if (me) {
-    const lvl = me.level ?? me.playerLevel ?? me.user?.level ?? '?';
-    console.log('profil :', me.handle || me.username || me.id || '-', '· level', lvl);
+    const st = await walletState();
+    console.log('profil :', me.handle || me.username || me.id || '-', '· level', st.level ?? '?');
+    console.log('energy :', st.energy ?? '?', st.energyMax ? `/ ${st.energyMax}` : '', '· power', st.power ?? '?');
   }
 }
 
@@ -191,7 +192,9 @@ async function pickSpot(locationId) {
   const lvl = levelOf(me);
   const reqLvl = (sp) => sp.levelRequired ?? sp.requiredLevel ?? 0;
   const power = (sp) => sp.miningPowerRequired ?? sp.miningPower ?? 0;
-  const free = spots.filter((sp) => sp.locked !== true && (!lvl || reqLvl(sp) <= lvl));
+  const pw = Number(me?.miningPower ?? me?.power ?? 0) || 0;
+  const reqPow = (sp) => sp.miningPowerRequired ?? 0;
+  const free = spots.filter((sp) => sp.locked !== true && (!lvl || reqLvl(sp) <= lvl) && (!pw || reqPow(sp) <= pw));
   const pool = free.length ? free : spots.filter((sp) => sp.locked !== true);
   const list = pool.length ? pool : spots;
   // ambil yang paling "berat" (biasanya drop lebih baik) tapi tanpa requirement power tertinggi
@@ -215,7 +218,7 @@ async function mineOnce({ locationId, spotId, strategy }) {
   }
   try {
     const pos = await api('/mining/positions', { method: 'POST', body });
-    console.log(`mining dimulai · ${pos.locationName || locationId} · id ${pos.id} · ends ${pos.endsAt || '?'}`);
+    console.log(`start digging · ${pos.locationName || locationId} · id ${pos.id} · ends ${pos.endsAt || '?'}`);
     return pos;
   } catch (e) {
     // spot ditolak → coba spot lain di cave yang sama
@@ -269,22 +272,68 @@ async function claimAll() {
   return claimed;
 }
 
-async function pickLocation() {
+const pick = (o, keys) => {
+  for (const k of keys) {
+    const v = k.split('.').reduce((a, p) => (a == null ? a : a[p]), o);
+    if (v !== undefined && v !== null && !Number.isNaN(Number(v))) return Number(v);
+  }
+  return null;
+};
+
+const ENERGY_KEYS = ['energy', 'energyPoints', 'energy.current', 'stats.energy', 'user.energy', 'resources.energy'];
+const EMAAX_KEYS = ['energyMax', 'energyCapacity', 'maxEnergy', 'stats.energyMax', 'user.energyMax'];
+const POWER_KEYS = ['miningPower', 'power', 'stats.miningPower', 'user.miningPower'];
+const LEVEL_KEYS = ['level', 'playerLevel', 'stats.level', 'user.level', 'progress.level'];
+
+async function walletState() {
+  const me = await api('/user/me').catch(() => null);
+  return {
+    me,
+    level: pick(me, LEVEL_KEYS),
+    power: pick(me, POWER_KEYS),
+    energy: pick(me, ENERGY_KEYS),
+    energyMax: pick(me, EMAAX_KEYS),
+  };
+}
+
+async function pickLocation(st) {
   if (ENV.MINING_LOCATION) return { locationId: ENV.MINING_LOCATION, spotId: ENV.MINING_SPOT, strategy: ENV.MINING_STRATEGY };
 
-  const [locData, me] = await Promise.all([api('/mining/locations'), api('/user/me').catch(() => null)]);
-  const list = arr(locData);
+  const state = st || (await walletState());
+  const list = arr(await api('/mining/locations'));
   if (!list.length) throw new Error('tidak ada lokasi mining');
 
-  const lvl = me?.level ?? me?.playerLevel ?? me?.user?.level ?? me?.progress?.level ?? null;
-  const reqOf = (l) => l.requiredLevel ?? l.levelRequired ?? l.minLevel ?? 0;
+  const lvl = (l) => l.levelRequired ?? l.level ?? 0;
+  const cost = (l) => l.energyCost ?? l.energy_cost ?? 0;
+  const pow = (l) => l.miningPowerRequired ?? 0;
+  const dur = (l) => l.durationSeconds ?? 0;
 
   let ok = list.filter((l) => l.unlocked !== false);
-  if (lvl != null) ok = ok.filter((l) => reqOf(l) <= Number(lvl));
-  // urutkan naik, ambil yang paling tinggi yang masih terjangkau
-  ok.sort((a, b) => reqOf(a) - reqOf(b));
-  const pick = ok[ok.length - 1] || list.slice().sort((a, b) => reqOf(a) - reqOf(b))[0];
-  return { locationId: pick.id, strategy: ENV.MINING_STRATEGY };
+  if (state.level != null) ok = ok.filter((l) => lvl(l) <= state.level);
+  if (state.power != null) ok = ok.filter((l) => pow(l) <= state.power);
+
+  const affordable = state.energy == null ? ok : ok.filter((l) => cost(l) <= state.energy);
+
+  if (!affordable.length) {
+    const cheapest = (ok.length ? ok : list).slice().sort((a, b) => cost(a) - cost(b))[0];
+    const need = cost(cheapest) - (state.energy ?? 0);
+    return {
+      blocked: true,
+      reason: `energy ${state.energy ?? '?'} tidak cukup untuk cave termurah (${cheapest.name || cheapest.id} butuh ${cost(cheapest)} EP)`,
+      waitSeconds: Math.max(60, need * 120 + 30), // 1 EP / 2 menit
+      cheapest,
+    };
+  }
+
+  // yang paling lama durasinya (reward terbaik) di antara yang terjangkau
+  affordable.sort((a, b) => dur(b) - dur(a) || cost(b) - cost(a));
+  const best = affordable[0];
+  return {
+    locationId: best.id,
+    spotId: ENV.MINING_SPOT,
+    strategy: ENV.MINING_STRATEGY,
+    cave: best,
+  };
 }
 
 async function miningLoop() {
@@ -298,6 +347,12 @@ async function miningLoop() {
       const active = list.filter((p) => !isReady(p));
       if (!active.length) {
         const cfg = await pickLocation();
+        if (cfg.blocked) {
+          console.log(`${new Date().toLocaleTimeString('id-ID')} · ${cfg.reason} · tunggu ${Math.round(cfg.waitSeconds / 60)} menit`);
+          await new Promise((r) => setTimeout(r, cfg.waitSeconds * 1000));
+          continue;
+        }
+        console.log(`enter mine · ${cfg.cave?.name || cfg.locationId} · EP ${cfg.cave?.energyCost ?? '?'} · ${Math.round((cfg.cave?.durationSeconds ?? 0) / 60)} menit`);
         await mineOnce(cfg);
       } else {
         const nxt = active[0];
@@ -392,7 +447,12 @@ try {
     if (has('--once')) {
       await claimAll();
       const cfg = await pickLocation();
-      await mineOnce(cfg);
+      if (cfg.blocked) {
+        console.log(cfg.reason, '· perlu tunggu', Math.round(cfg.waitSeconds / 60), 'menit');
+      } else {
+        console.log(`enter mine · ${cfg.cave?.name || cfg.locationId} · EP ${cfg.cave?.energyCost ?? '?'}`);
+        await mineOnce(cfg);
+      }
     } else {
       await miningLoop();
     }
