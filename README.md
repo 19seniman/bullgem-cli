@@ -2,6 +2,21 @@
 
 Login pakai private key (EIP-191) atau email + OTP, lalu otomatis klaim quest dan jalankan mining.
 
+## Tampilan
+
+Setiap kali dijalankan, CLI menampilkan banner:
+
+```
+┌──────────────────────────────────────────────┐
+│  B U L L G E M   mining companion            │
+│  project  Bullshot · gem.bullshot.io         │
+│  author   19Seniman                          │
+│  build    v1.1.0                             │
+└──────────────────────────────────────────────┘
+```
+
+Banner otomatis mati saat output dialihkan ke file/pipe atau `NO_COLOR=1`. Pakai `--quiet` untuk mematikannya secara manual.
+
 ## Instalasi
 
 ```bash

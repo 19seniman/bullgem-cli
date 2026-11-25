@@ -20,6 +20,27 @@ const arg = (k, d = null) => {
 };
 const has = (k) => argv.includes(k);
 
+/* ---------- banner ---------- */
+const C = {
+  c: '\x1b[36m', m: '\x1b[35m', y: '\x1b[33m', g: '\x1b[32m',
+  d: '\x1b[2m', b: '\x1b[1m', r: '\x1b[0m',
+};
+const color = () => process.stdout.isTTY && !process.env.NO_COLOR && !has('--quiet');
+
+function banner() {
+  if (!color()) return;
+  const { c, m, d, b, r } = C;
+  const title = 'B U L L G E M';
+  const line = '─'.repeat(46);
+  console.log(`
+${d}┌${line}┐${r}
+${d}│${r}  ${b}${c}${title}${r}   ${d}mining companion${r}
+${d}│${r}  ${m}project${r}  Bullshot · gem.bullshot.io
+${d}│${r}  ${m}author ${r} 19Seniman
+${d}│${r}  ${m}build  ${r} v1.1.0
+${d}└${line}┘${r}`);
+}
+
 /* ---------- env ---------- */
 function loadEnv() {
   const out = { ...process.env };
@@ -432,6 +453,8 @@ async function quests(auto = false, tweetUrl = '') {
 }
 
 /* ---------- main ---------- */
+banner();
+
 try {
   if (cmd === 'login') {
     if (arg('--jwt') || ENV.JWT) {
