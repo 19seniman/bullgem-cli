@@ -1,7 +1,5 @@
 # bullgem.js — CLI Bullgem (gem.bullshot.io)
 
-Login cukup pakai **JWT token** dari browser — tanpa private key, tanpa email/OTP. Setelah itu quest dikerjakan otomatis dan mining berjalan sendiri.
-
 ```
 ┌──────────────────────────────────────────────┐
 │  B U L L G E M   mining companion            │
