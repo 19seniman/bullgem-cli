@@ -39,6 +39,26 @@ node bullgem.js status
 
 Kalau `debug` membalas **401**, JWT kedaluwarsa — ambil ulang. Kalau **403**, cookie Cloudflare kedaluwarsa (±30 menit) — ambil ulang. Ambil keduanya sekaligus supaya tidak bolak-balik.
 
+## Auto upgrade
+
+Upgrade dibeli otomatis dari gems sebelum memilih cave berikutnya.
+
+```bash
+node bullgem.js upgrades          # daftar + harga
+node bullgem.js upgrade           # beli satu yang terbaik & terjangkau
+node bullgem.js upgrade --id X    # beli yang tertentu
+```
+
+Aturan pemilihan: urut `UPGRADE_PRIORITY` (default `energyCapacity,miningPower,miningSpeed`), hanya yang harganya ≤ `gems − GEM_RESERVE`, lalu harga termurah di antara stat yang sama.
+
+```ini
+AUTO_UPGRADE=1
+GEM_RESERVE=0
+UPGRADE_PRIORITY=energyCapacity,miningPower,miningSpeed
+```
+
+Set `AUTO_UPGRADE=0` kalau mau mengumpulkan gems dulu. Endpoint: `GET /upgrades`, `POST /upgrades/{id}`.
+
 ## Output
 
 Semua daftar tampil sebagai tabel, bukan JSON mentah:

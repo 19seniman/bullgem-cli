@@ -470,6 +470,7 @@ async function miningLoop() {
     try {
       await claimAll();
       await collectChests();
+      if (ENV.AUTO_UPGRADE !== '0') await autoUpgrade().catch(() => null);
       const data = await api('/mining/positions');
       const list = Array.isArray(data) ? data : data?.positions || data?.data || [];
       const active = list.filter((p) => !isReady(p));
@@ -498,6 +499,57 @@ async function miningLoop() {
     }
     await sleep(Math.round(poll * 1000 * rnd(0.75, 1.35)));
   }
+}
+
+/* ---------- upgrades ---------- */
+const UPGRADE_ORDER = () => (ENV.UPGRADE_PRIORITY || 'energyCapacity,miningPower,miningSpeed').split(',').map((x) => x.trim());
+
+async function getUpgrades() {
+  return arr(await api('/upgrades'), 'upgrades');
+}
+
+async function listUpgrades() {
+  const [list, bal] = await Promise.all([getUpgrades(), api('/user/balance').catch(() => null)]);
+  const gems = bal?.gems ?? bal?.balance?.gems ?? 0;
+  if (!list.length) return console.log('tidak ada upgrade tersedia');
+  table(
+    ['ID', 'NAMA', 'STAT', 'NAIK', 'HARGA', 'LVL'],
+    list.map((u) => [
+      u.id,
+      (u.name || '-').slice(0, 26),
+      u.type || u.stat || '-',
+      '+' + (u.increment ?? '?'),
+      u.cost != null ? `${u.cost} G` : '-',
+      u.level ?? '-',
+    ]),
+    [0, 0, 0, 'r', 'r', 'r']
+  );
+  console.log(`gems tersedia: ${gems}`);
+}
+
+async function autoUpgrade(forceId = null) {
+  const list = await getUpgrades();
+  if (!list.length) return null;
+  const bal = await api('/user/balance').catch(() => null);
+  const gems = Number(bal?.gems ?? bal?.balance?.gems ?? 0);
+  const reserve = Number(ENV.GEM_RESERVE || 0);
+  const order = UPGRADE_ORDER();
+  const rank = (u) => {
+    const k = u.type || u.stat || '';
+    const i = order.indexOf(k);
+    return i === -1 ? 99 : i;
+  };
+
+  const pool = (forceId ? list.filter((u) => String(u.id) === String(forceId)) : list)
+    .filter((u) => u.cost != null && Number(u.cost) <= gems - reserve)
+    .sort((a, b) => rank(a) - rank(b) || Number(a.cost) - Number(b.cost));
+
+  const pickUp = pool[0];
+  if (!pickUp) return null;
+
+  const r = await api(`/upgrades/${pickUp.id}`, { method: 'POST' });
+  console.log(`upgrade · ${pickUp.name || pickUp.id} +${pickUp.increment ?? '?'} · ${pickUp.cost} GEM · sisa ${gems - Number(pickUp.cost)}`);
+  return r;
 }
 
 /* ---------- quests ---------- */
@@ -579,6 +631,13 @@ try {
   } else if (cmd === 'quests') {
     await ensureLogin();
     await quests(has('--auto'), arg('--tweet-url', ''));
+  } else if (cmd === 'upgrades') {
+    await ensureLogin();
+    await listUpgrades();
+  } else if (cmd === 'upgrade') {
+    await ensureLogin();
+    const r = await autoUpgrade(arg('--id'));
+    if (!r) console.log('belum ada upgrade yang terjangkau (cek GEM_RESERVE / gem)');
   } else if (cmd === 'collect') {
     await ensureLogin();
     const n = await claimAll();
@@ -655,6 +714,9 @@ try {
   node bullgem.js positions          posisi mining aktif
   node bullgem.js quests             daftar quest
   node bullgem.js quests --auto      start & claim semua yang bisa
+  node bullgem.js upgrades           daftar upgrade + harga
+  node bullgem.js upgrade            beli upgrade terbaik yang terjangkau
+  node bullgem.js upgrade --id X     beli upgrade tertentu
   node bullgem.js collect            collect rewards + buka chest sekarang
   node bullgem.js mine --once        collect, lalu mulai satu posisi
   node bullgem.js mine               loop mining (claim → start → tunggu)
