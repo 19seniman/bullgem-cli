@@ -2,6 +2,31 @@
 
 Login pakai private key (EIP-191) atau email + OTP, lalu otomatis klaim quest dan jalankan mining.
 
+## Anti-bot / keamanan akun
+
+Script tidak menembak server sekaligus. Yang dipasang:
+
+| Mekanisme | Default |
+|---|---|
+| Jeda acak antar request | 700–2200 ms (`HUMAN_MIN_MS`, `HUMAN_MAX_MS`) |
+| Interval loop diacak | poll ±35% (`POLL_SECONDS`) |
+| Retry 429/5xx | maks 3×, backoff eksponensial + jitter |
+| Berhenti saat 401 | minta JWT baru, tidak mengulang |
+| Berhenti setelah 5 error berturut | supaya tidak terlihat seperti bot |
+| Batas putaran | `MAX_ROUNDS` (0 = tanpa batas) |
+
+Atur di `.env`:
+
+```ini
+HUMAN_MIN_MS=700
+HUMAN_MAX_MS=2200
+MAX_RETRY=3
+MAX_ROUNDS=0
+NO_PACING=0
+```
+
+Saran pemakaian: satu akun per IP, jangan jalan 24/7 tanpa jeda, dan hentikan kalau server mulai membalas 429 berulang. Jeda manusiawi menurunkan risiko deteksi, tapi tidak menjamin akun bebas dari sanksi — aturan platform tetap berlaku.
+
 ## Tampilan
 
 Setiap kali dijalankan, CLI menampilkan banner:

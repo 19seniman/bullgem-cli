@@ -58,6 +58,19 @@ function loadEnv() {
 }
 const ENV = loadEnv();
 
+/* ---------- anti-bot / pacing ---------- */
+const rnd = (a, b) => a + Math.random() * (b - a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HUMAN_MIN = Number(ENV.HUMAN_MIN_MS || 700);
+const HUMAN_MAX = Number(ENV.HUMAN_MAX_MS || 2200);
+const MAX_RETRY = Number(ENV.MAX_RETRY || 3);
+
+// jeda acak antar request, seperti manusia mengklik
+async function humanPause() {
+  if (ENV.NO_PACING === '1') return;
+  await sleep(rnd(HUMAN_MIN, HUMAN_MAX));
+}
+
 /* ---------- tokens ---------- */
 function loadTokens() {
   try { return JSON.parse(fs.readFileSync(TOKENS, 'utf8')); } catch { return {}; }
@@ -68,7 +81,8 @@ function saveTokens(t) {
 }
 
 /* ---------- http ---------- */
-async function api(endpoint, { method = 'GET', body, auth = true } = {}) {
+async function api(endpoint, { method = 'GET', body, auth = true, quiet = false } = {}) {
+  if (!quiet) await humanPause();
   const t = loadTokens();
   const headers = {
     accept: 'application/json',
@@ -80,7 +94,18 @@ async function api(endpoint, { method = 'GET', body, auth = true } = {}) {
   else if (ENV.CF_CLEARANCE) headers.cookie = `cf_clearance=${ENV.CF_CLEARANCE}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (auth && t.token) headers.authorization = `Bearer ${t.token}`;
-  const res = await fetch(API + endpoint, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res = await fetch(API + endpoint, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+
+  // backoff kalau kena rate-limit / gangguan sementara
+  for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+    if (res.status !== 429 && res.status < 500) break;
+    const retryAfter = Number(res.headers.get('retry-after')) || 0;
+    const wait = retryAfter ? retryAfter * 1000 : Math.round(1500 * Math.pow(2, attempt) * rnd(0.8, 1.3));
+    if (!quiet) console.log(`  rate-limit ${res.status} · tunggu ${Math.round(wait / 1000)}s (${attempt}/${MAX_RETRY})`);
+    await sleep(wait);
+    res = await fetch(API + endpoint, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  }
+
   const text = await res.text();
   if (text.trimStart().startsWith('<!')) {
     const err = new Error(`HTTP ${res.status} — Cloudflare memblokir request (halaman HTML, bukan JSON). Lihat opsi di README bagian "Kalau kena Cloudflare".`);
@@ -387,8 +412,15 @@ async function pickLocation(st) {
 
 async function miningLoop() {
   const poll = Math.max(10, Number(ENV.POLL_SECONDS || 30));
-  console.log(`loop mining · poll ${poll}s · Ctrl+C stop`);
+  const maxRounds = Number(ENV.MAX_ROUNDS || 0);
+  let rounds = 0;
+  let errs = 0;
+  console.log(`loop mining · poll ${poll}s · jeda manusiawi ${HUMAN_MIN}-${HUMAN_MAX}ms · Ctrl+C stop`);
   for (;;) {
+    if (maxRounds && ++rounds > maxRounds) {
+      console.log(`batas ${maxRounds} putaran tercapai — berhenti (ubah MAX_ROUNDS untuk melanjutkan)`);
+      break;
+    }
     try {
       await claimAll();
       await collectChests();
@@ -409,11 +441,16 @@ async function miningLoop() {
         const left = nxt.endsAt ? Math.max(0, Math.round((new Date(nxt.endsAt) - Date.now()) / 1000)) : '?';
         console.log(`${new Date().toLocaleTimeString('id-ID')} · aktif ${active.length} · sisa ${left}s`);
       }
+      errs = 0;
     } catch (e) {
+      errs++;
       console.log(`error: ${e.message}`);
       if (e.cf) console.log('→ jalankan dari jaringan rumah, bukan VPS; atau tunggu beberapa menit.');
+      if (e.status === 401) { console.log('sesi habis — ambil JWT baru dari browser'); break; }
+      if (errs >= 5) { console.log('5 error berturut-turut — berhenti supaya akun tidak dianggap bot'); break; }
+      await sleep(Math.round(rnd(4000, 9000) * errs));
     }
-    await new Promise((r) => setTimeout(r, poll * 1000));
+    await sleep(Math.round(poll * 1000 * rnd(0.75, 1.35)));
   }
 }
 
@@ -428,6 +465,7 @@ async function quests(auto = false, tweetUrl = '') {
   if (!auto) return;
 
   for (const q of list) {
+    await humanPause();
     const id = q.questId || q.id;
     const st = q.status;
     try {
