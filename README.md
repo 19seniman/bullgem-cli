@@ -1,5 +1,7 @@
 # bullgem.js — CLI Bullgem (gem.bullshot.io)
 
+# Register : https://gem.bullshot.io/r/0xe4b17aa3
+
 ```
 ┌──────────────────────────────────────────────┐
 │  B U L L G E M   mining companion            │
