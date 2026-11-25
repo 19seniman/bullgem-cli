@@ -74,6 +74,29 @@ node bullgem.js mine                # loop
 
 Override manual: `MINING_LOCATION`, `MINING_SPOT`, `MINING_STRATEGY` di `.env`.
 
+## Collect rewards otomatis
+
+Setiap siklus, sebelum digging baru, script mengumpulkan semua hasil yang sudah selesai:
+
+1. `GET /mining/positions` → semua posisi
+2. posisi `status: ready/completed` atau `endsAt` sudah lewat → `POST /mining/positions/{id}/claim`
+3. `GET /chests` → buka chest tersedia (`POST /chests/{id}/open`), melewati yang terkunci atau `opensAt` belum tiba
+4. baru masuk mine berikutnya
+
+Collect sekali tanpa menunggu:
+
+```bash
+node bullgem.js collect
+```
+
+Contoh output:
+
+```
+collect rewards · Crystal Cavern ✓ · 12 GEMS · 3 item
+chest silver-01 dibuka ✓
+selesai · 1 posisi, 1 chest
+```
+
 ## Login pakai JWT (tanpa private key)
 
 Cara paling ringan: pakai token yang sudah dibuat browser-mu.
