@@ -480,7 +480,7 @@ async function miningLoop() {
       await claimAll();
       await collectChests();
       if (ENV.AUTO_UPGRADE !== '0') {
-        const hrs = Number(ENV.UPGRADE_INTERVAL_HOURS || 24);
+        const hrs = Number(ENV.UPGRADE_INTERVAL_HOURS || 12);
         const last = loadState().lastUpgradeAt;
         const ageH = last ? (Date.now() - new Date(last).getTime()) / 3.6e6 : Infinity;
         if (ageH >= hrs) {

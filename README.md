@@ -49,13 +49,13 @@ node bullgem.js upgrade           # beli satu yang terbaik & terjangkau
 node bullgem.js upgrade --id X    # beli yang tertentu
 ```
 
-**Dijadwalkan sekali sehari**, bukan tiap siklus — supaya gems menumpuk untuk mining. Waktu pembelian terakhir dicatat di `.state.json`.
+**Dijadwalkan dua kali sehari (12 jam)**, bukan tiap siklus — supaya gems menumpuk untuk mining. Waktu pembelian terakhir dicatat di `.state.json`.
 
 Aturan pemilihan: urut `UPGRADE_PRIORITY` (default `energyCapacity,miningPower`; `miningSpeed` dinonaktifkan di UI game), hanya yang harganya ≤ `gems − GEM_RESERVE`, lalu harga termurah di antara stat yang sama.
 
 ```ini
 AUTO_UPGRADE=1
-UPGRADE_INTERVAL_HOURS=24
+UPGRADE_INTERVAL_HOURS=12
 GEM_RESERVE=0
 UPGRADE_PRIORITY=energyCapacity,miningPower
 ```
