@@ -17,7 +17,7 @@ Login cukup pakai **JWT token** dari browser — tanpa private key, tanpa email/
 git clone https://github.com/19seniman/bullgem-cli.git
 cd bullgem-cli
 npm install
-cp .env.example .env
+nano .env 
 ```
 
 ## Login (JWT)
