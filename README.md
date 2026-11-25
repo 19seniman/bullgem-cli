@@ -2,41 +2,56 @@
 
 Login pakai private key (EIP-191) atau email + OTP, lalu otomatis klaim quest dan jalankan mining.
 
-**Butuh:** Node 18+, `npm install` (satu dependency: ethers).
-
-## 1) Setup
+## Instalasi
 
 ```bash
+git clone https://github.com/19seniman/bullgem-cli.git
+cd bullgem-cli
 npm install
 cp .env.example .env
 ```
 
-Isi `.env` (pilih salah satu):
+Buka `.env`, isi salah satu:
 
 ```ini
-PRIVATE_KEY=0x....        # wallet login, tanda tangan lokal
-EMAIL=kamu@mail.com       # alternatif: login email + OTP
-REF_CODE=                 # opsional
-MINING_LOCATION=          # opsional, lihat: node bullgem.js locations
-POLL_SECONDS=30
+PRIVATE_KEY=0x....        # wallet login (tanda tangan lokal)
+EMAIL=kamu@mail.com       # atau login email + OTP
 ```
 
-## 2) Pakai
+Lalu login dan cek akun:
 
 ```bash
-node bullgem.js login          # wallet: nonce → sign → JWT; email: OTP di terminal
-node bullgem.js status         # saldo + profil
-node bullgem.js locations      # daftar tambang
-node bullgem.js quests         # status quest
-node bullgem.js quests --auto  # start & claim semua yang bisa
-node bullgem.js mine --once    # klaim yang siap, lalu mulai satu posisi
-node bullgem.js mine           # loop: klaim → start → tunggu (poll)
-node bullgem.js auto           # quest otomatis + loop mining
+node bullgem.js login
+node bullgem.js status
 ```
 
-Token JWT disimpan di `.tokens.json` (mode 600, masuk `.gitignore`).
+Kalau `login` sukses tapi `status` gagal 401, jalankan `node bullgem.js login` lagi — token JWT disimpan di `.tokens.json` dan berlaku terbatas.
 
-## 3) API yang dipakai (hasil baca bundle produksi)
+## Menjalankan
+
+```bash
+node bullgem.js quests          # lihat daftar quest
+node bullgem.js quests --auto   # kerjakan + klaim otomatis
+node bullgem.js locations       # daftar tambang
+node bullgem.js mine            # loop mining (klaim → mulai → tunggu)
+node bullgem.js auto            # quest otomatis + mining sekaligus
+```
+
+Hentikan dengan `Ctrl+C`. Interval poll diatur `POLL_SECONDS` (default 30 detik).
+
+## Termux (Android)
+
+```bash
+pkg install nodejs git -y
+git clone https://github.com/19seniman/bullgem-cli.git
+cd bullgem-cli && npm install
+cp .env.example .env && nano .env
+node bullgem.js login
+termux-wake-lock
+node bullgem.js auto
+```
+
+## API yang dipakai (hasil baca bundle produksi)
 
 Base: `https://gemapi.bullshot.io/api`
 
@@ -59,7 +74,7 @@ Base: `https://gemapi.bullshot.io/api`
 
 Model auth: JWT Bearer (`rg_jwt_token` di web), plus header `X-Wallet-Address` untuk upload. Pesan tanda tangan: `Sign in to Bull GEM on Base: <nonce>`.
 
-## 4) Catatan penting
+## Catatan penting
 
 - **Cloudflare**: `gemapi.bullshot.io` dilindungi Cloudflare. Dari VPS/datacenter, request JSON dibalas halaman `Just a moment…` (403). Jalankan dari jaringan rumah; script menampilkan pesan jelas kalau ini terjadi.
 - **Private key**: hanya dibaca dari `.env` lokal, dipakai untuk `signMessage` di mesin sendiri. Script tidak pernah mencetak atau mengirimnya. Jangan pakai wallet utama — pakai wallet khusus game.
