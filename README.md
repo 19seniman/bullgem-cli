@@ -42,6 +42,28 @@ node bullgem.js status
 
 Kalau `debug` membalas **401**, JWT kedaluwarsa — ambil ulang. Kalau **403**, cookie Cloudflare kedaluwarsa (±30 menit) — ambil ulang. Ambil keduanya sekaligus supaya tidak bolak-balik.
 
+## Output
+
+Semua daftar tampil sebagai tabel, bukan JSON mentah:
+
+```
+┌─────────────────────────┬───────────────────┬────┬────────┬─────┬───────┐
+│ ID                      │ CAVE              │ EP │ DURASI │ LVL │ POWER │
+├─────────────────────────┼───────────────────┼────┼────────┼─────┼───────┤
+│ greenstone-quarry-83129 │ Greenstone Quarry │ 10 │    10m │   1 │     0 │
+│ crystal-cavern-99213    │ Crystal Cavern    │ 20 │    30m │   6 │     8 │
+└─────────────────────────┴───────────────────┴────┴────────┴─────┴───────┘
+
+┌──────────────────────────────┬─────────┬───────────┬───────────────┬──────┐
+│ QUEST                        │ PERIODE │ STATUS    │        REWARD │ SISA │
+├──────────────────────────────┼─────────┼───────────┼───────────────┼──────┤
+│ Daily Miner Sign-in          │ daily   │ claimed   │  75 G · 45 XP │    - │
+│ Like, Retweet & Comment on X │ daily   │ available │ 105 G · 60 XP │    - │
+└──────────────────────────────┴─────────┴───────────┴───────────────┴──────┘
+```
+
+Perintah yang memakai tabel: `status`, `locations`, `spots`, `positions`, `quests`.
+
 ## Menjalankan
 
 ```bash

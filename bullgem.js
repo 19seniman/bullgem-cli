@@ -187,41 +187,87 @@ async function ensureLogin() {
 
 const arr = (d, k) => (Array.isArray(d) ? d : d?.[k] || d?.data || []);
 
-/* ---------- views ---------- */
-const gems = (n) => (typeof n === 'number' ? n.toLocaleString('id-ID') : n);
+/* ---------- table ---------- */
+const strip = (s) => String(s ?? '').replace(/\x1b\[[0-9;]*m/g, '');
+const vlen = (s) => [...strip(s)].length;
+const padTo = (s, n, right = false) => {
+  const gap = ' '.repeat(Math.max(0, n - vlen(s)));
+  return right ? gap + strip(s) : strip(s) + gap;
+};
 
+function table(headers, rows, aligns = []) {
+  const cols = headers.map((h, i) => Math.max(vlen(h), ...rows.map((r) => vlen(r[i]))));
+  const on = color();
+  const D = on ? C.d : '', B = on ? C.b : '', R = on ? C.r : '';
+  const rule = (l, m, r) => D + l + cols.map((w) => '─'.repeat(w + 2)).join(m) + r + R;
+  console.log(rule('┌', '┬', '┐'));
+  console.log(D + '│' + R + headers.map((h, i) => ` ${B}${padTo(h, cols[i])}${R} `).join(D + '│' + R) + D + '│' + R);
+  console.log(rule('├', '┼', '┤'));
+  for (const r of rows) {
+    console.log(D + '│' + R + r.map((c, i) => ` ${padTo(c ?? '-', cols[i], aligns[i] === 'r')} `).join(D + '│' + R) + D + '│' + R);
+  }
+  console.log(rule('└', '┴', '┘'));
+}
+
+const fmtDur = (s) => {
+  if (!s) return '-';
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h ? `${h}j ${m}m` : `${m}m`;
+};
+const fmtLeft = (iso) => {
+  if (!iso) return '-';
+  const d = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(d)) return '-';
+  if (d <= 0) return 'siap';
+  const m = Math.floor(d / 60000), s = Math.floor((d % 60000) / 1000);
+  return m ? `${m}m ${s}s` : `${s}s`;
+};
+
+/* ---------- views ---------- */
 async function status() {
   const [bal, me] = await Promise.all([api('/user/balance'), api('/user/me').catch(() => null)]);
-  console.log('akun   :', loadTokens().account || '-');
+  const st = await walletState().catch(() => ({}));
   const gems = bal?.gems ?? bal?.balance?.gems;
-  if (gems != null) console.log('gems   :', gems);
-  else console.log('balance:', JSON.stringify(bal));
-  if (me) {
-    const st = await walletState();
-    console.log('profil :', me.handle || me.username || me.id || '-', '· level', st.level ?? '?');
-    console.log('energy :', st.energy ?? '?', st.energyMax ? `/ ${st.energyMax}` : '', '· power', st.power ?? '?');
-  }
+  table(['FIELD', 'NILAI'], [
+    ['akun', loadTokens().account || '-'],
+    ['handle', me?.handle || me?.username || '-'],
+    ['gems', gems ?? '-'],
+    ['energy', st.energy != null ? `${st.energy}${st.energyMax ? ' / ' + st.energyMax : ''}` : '-'],
+    ['power', st.power ?? '-'],
+    ['level', st.level ?? '-'],
+    ['login', loadTokens().mode || '-'],
+  ]);
 }
 
 async function locations() {
   const data = await api('/mining/locations');
-  const list = Array.isArray(data) ? data : data?.locations || data?.data || [];
+  const list = arr(data, 'locations');
   if (!list.length) return console.log(JSON.stringify(data, null, 2).slice(0, 1200));
-  for (const l of list) {
-    const req = l.requiredLevel ? ` · min lvl ${l.requiredLevel}` : '';
-    const unlock = l.unlocked === false ? ' · terkunci' : '';
-    console.log(`${String(l.id).padEnd(22)} ${l.name || ''}${req}${unlock}`);
-  }
+  table(
+    ['ID', 'CAVE', 'EP', 'DURASI', 'LVL', 'POWER'],
+    list.map((l) => [
+      l.id,
+      l.name || '-',
+      l.energyCost ?? '-',
+      fmtDur(l.durationSeconds),
+      l.levelRequired ?? 0,
+      l.miningPowerRequired ?? 0,
+    ]),
+    [0, 0, 'r', 'r', 'r', 'r']
+  );
 }
 
 async function positions() {
   const data = await api('/mining/positions');
-  const list = Array.isArray(data) ? data : data?.positions || data?.data || [];
+  const list = arr(data, 'positions');
   if (!list.length) return console.log('tidak ada posisi mining aktif');
-  for (const p of list) {
-    console.log(`${p.id} · ${p.locationName || p.locationId} · ${p.status || '?'} · ends ${p.endsAt || '-'}`);
-  }
+  table(
+    ['ID', 'CAVE', 'STATUS', 'SELESAI'],
+    list.map((p) => [String(p.id).slice(0, 12), p.locationName || p.locationId || '-', p.status || '-', fmtLeft(p.endsAt)]),
+    [0, 0, 0, 'r']
+  );
 }
+
 
 /* ---------- spots ("Enter mine") ---------- */
 async function getSpots(locationId) {
@@ -457,38 +503,49 @@ async function miningLoop() {
 /* ---------- quests ---------- */
 async function quests(auto = false, tweetUrl = '') {
   const data = await api('/quests');
-  const list = Array.isArray(data) ? data : data?.quests || data?.data || [];
-  if (!list.length) return console.log(JSON.stringify(data, null, 2).slice(0, 1500));
-  for (const q of list) {
-    console.log(`${String(q.questId || q.id).padEnd(28)} ${String(q.status || '?').padEnd(12)} ${q.title || q.name || ''}${q.reward ? ' · ' + q.reward : ''}`);
-  }
+  const groups = ['daily', 'weekly', 'monthly', 'oneTime', 'onetime'];
+  let list = [];
+  if (Array.isArray(data)) list = data;
+  else if (data?.quests) list = data.quests;
+  else if (groups.some((g) => Array.isArray(data?.[g]))) {
+    for (const g of groups) if (Array.isArray(data?.[g])) list.push(...data[g]);
+  } else if (data?.data) list = Array.isArray(data.data) ? data.data : [];
+
+  if (!list.length) return console.log(JSON.stringify(data, null, 2).slice(0, 1200));
+
+  table(
+    ['QUEST', 'PERIODE', 'STATUS', 'REWARD', 'SISA'],
+    list.map((q) => [
+      (q.title || q.id || '-').slice(0, 34),
+      q.period || q.type || '-',
+      q.status || '-',
+      [q.rewardGems ? `${q.rewardGems} G` : null, q.rewardXp ? `${q.rewardXp} XP` : null].filter(Boolean).join(' · ') || '-',
+      q.secondsLeft ? `${Math.round(q.secondsLeft / 60)}m` : '-',
+    ]),
+    [0, 0, 0, 'r', 'r']
+  );
+
   if (!auto) return;
 
   for (const q of list) {
     await humanPause();
-    const id = q.questId || q.id;
+    const id = q.id || q.questId;
     const st = q.status;
     try {
-      if (st === 'available' || st === 'locked' || st === 'not_started' || st === 'in_progress') {
-        if (st !== 'in_progress') {
-          await api('/quests/start', { method: 'POST', body: { questId: id } });
-          console.log(`start ${id}`);
-        }
-      }
-      if (st === 'ready' || st === 'completed') {
-        const needsTweet = !!q.requiresTweet || /twitter|x\.com/i.test(q.verificationType || '');
-        if (needsTweet && !tweetUrl) {
-          console.log(`lewati ${id} (butuh tweetUrl, pakai --tweet-url)`);
-          continue;
-        }
-        const r = await api('/quests/claim', { method: 'POST', body: { questId: id, tweetUrl: tweetUrl || '' } });
-        console.log(`claim ${id} → ${JSON.stringify(r).slice(0, 100)}`);
+      if (['available', 'locked', 'not_started'].includes(st)) {
+        await api('/quests/start', { method: 'POST', body: { questId: id } });
+        console.log(`  start  ${q.title || id}`);
+      } else if (st === 'ready' || st === 'completed') {
+        if (q.requiresTweet) { console.log(`  lewati ${id} (butuh tweet)`); continue; }
+        await api('/quests/claim', { method: 'POST', body: { questId: id, tweetUrl: tweetUrl || '' } });
+        console.log(`  claim  ${q.title || id} ✓`);
       }
     } catch (e) {
-      console.log(`${id}: ${e.message}`);
+      console.log(`  ${id}: ${e.message}`);
     }
   }
 }
+
 
 /* ---------- main ---------- */
 banner();
@@ -532,10 +589,19 @@ try {
     const loc = arg('--location') || ENV.MINING_LOCATION;
     const list = await getSpots(loc);
     if (!list.length) console.log(`tidak ada spot untuk lokasi ${loc}`);
-    for (const sp of list) {
-      const lvl = sp.levelRequired ?? sp.requiredLevel ?? 0;
-      const pw = sp.miningPowerRequired ?? 0;
-      console.log(`${String(sp.id).padEnd(24)} ${(sp.name || '').padEnd(18)} vein ${String(sp.vein || '-').padEnd(10)} lvl ${String(lvl).padEnd(3)} power ${pw}${sp.locked ? ' · terkunci' : ''}`);
+    else {
+      table(
+        ['ID', 'NAMA', 'VEIN', 'LVL', 'POWER', ''],
+        list.map((sp) => [
+          String(sp.id).slice(0, 22),
+          sp.name || '-',
+          sp.vein || '-',
+          sp.levelRequired ?? 0,
+          sp.miningPowerRequired ?? 0,
+          sp.locked ? 'terkunci' : 'buka',
+        ]),
+        [0, 0, 0, 'r', 'r', 0]
+      );
     }
   } else if (cmd === 'mine') {
     await ensureLogin();
