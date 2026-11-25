@@ -128,6 +128,5 @@ Base: `https://gemapi.bullshot.io/api`
 ## Catatan
 
 - Token JWT disimpan di `.tokens.json` (mode 600) dan tidak pernah di-commit.
-- `PRIVATE_KEY` dan `EMAIL` masih didukung kode lama, tapi tidak dipakai lagi — JWT lebih aman karena bisa dicabut server.
 - Quest Twitter/X butuh `--tweet-url`; quest lain diklaim langsung.
 - Cek aturan Bullgem soal otomasi sebelum dipakai jangka panjang.
