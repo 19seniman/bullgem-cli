@@ -520,7 +520,7 @@ async function miningLoop() {
 }
 
 /* ---------- upgrades ---------- */
-const UPGRADE_ORDER = () => (ENV.UPGRADE_PRIORITY || 'energyCapacity,miningPower,miningSpeed').split(',').map((x) => x.trim());
+const UPGRADE_ORDER = () => (ENV.UPGRADE_PRIORITY || 'energyCapacity,miningPower').split(',').map((x) => x.trim());
 
 async function getUpgrades() {
   return arr(await api('/upgrades'), 'upgrades');
