@@ -139,6 +139,8 @@ async function ensureLogin() {
   throw new Error('isi PRIVATE_KEY atau EMAIL di .env dulu');
 }
 
+const arr = (d, k) => (Array.isArray(d) ? d : d?.[k] || d?.data || []);
+
 /* ---------- views ---------- */
 const gems = (n) => (typeof n === 'number' ? n.toLocaleString('id-ID') : n);
 
@@ -146,7 +148,10 @@ async function status() {
   const [bal, me] = await Promise.all([api('/user/balance'), api('/user/me').catch(() => null)]);
   console.log('akun   :', loadTokens().account || '-');
   console.log('balance:', JSON.stringify(bal));
-  if (me) console.log('profil :', me.handle || me.username || me.id || JSON.stringify(me).slice(0, 160));
+  if (me) {
+    const lvl = me.level ?? me.playerLevel ?? me.user?.level ?? '?';
+    console.log('profil :', me.handle || me.username || me.id || '-', '· level', lvl);
+  }
 }
 
 async function locations() {
@@ -174,9 +179,31 @@ async function mineOnce({ locationId, spotId, strategy }) {
   const body = { locationId };
   if (spotId) body.spotId = spotId;
   if (strategy) body.strategy = strategy;
-  const pos = await api('/mining/positions', { method: 'POST', body });
-  console.log(`mining dimulai · ${pos.locationName || locationId} · id ${pos.id} · ends ${pos.endsAt || '?'}`);
-  return pos;
+  try {
+    const pos = await api('/mining/positions', { method: 'POST', body });
+    console.log(`mining dimulai · ${pos.locationName || locationId} · id ${pos.id} · ends ${pos.endsAt || '?'}`);
+    return pos;
+  } catch (e) {
+    // level kurang → turun ke lokasi yang lebih murah
+    if (e.status === 400 && /level/i.test(e.message)) {
+      const [data, me] = await Promise.all([api('/mining/locations'), api('/user/me').catch(() => null)]);
+      const lvl = Number(me?.level ?? me?.playerLevel ?? me?.user?.level ?? 0);
+      const reqOf = (l) => l.requiredLevel ?? l.levelRequired ?? l.minLevel ?? 0;
+      const cur = (arr(data).find((l) => String(l.id) === String(locationId)) || {});
+      const lower = arr(data)
+        .filter((l) => l.unlocked !== false)
+        .filter((l) => reqOf(l) < reqOf(cur))
+        .filter((l) => !lvl || reqOf(l) <= lvl)
+        .sort((a, b) => reqOf(b) - reqOf(a))[0];
+      if (lower) {
+        console.log(`level kurang untuk cave itu · pindah ke ${lower.name || lower.id} (req ${reqOf(lower)})`);
+        const pos = await api('/mining/positions', { method: 'POST', body: { ...body, locationId: lower.id } });
+        console.log(`mining dimulai · ${pos.locationName || lower.id} · ends ${pos.endsAt || '?'}`);
+        return pos;
+      }
+    }
+    throw e;
+  }
 }
 
 const isReady = (p) => p.status === 'ready' || p.status === 'completed' || (p.endsAt && new Date(p.endsAt).getTime() <= Date.now());
@@ -199,11 +226,19 @@ async function claimAll() {
 
 async function pickLocation() {
   if (ENV.MINING_LOCATION) return { locationId: ENV.MINING_LOCATION, spotId: ENV.MINING_SPOT, strategy: ENV.MINING_STRATEGY };
-  const data = await api('/mining/locations');
-  const list = Array.isArray(data) ? data : data?.locations || data?.data || [];
-  const open = list.filter((l) => l.unlocked !== false && (!l.requiredLevel || l.requiredLevel <= (l.playerLevel ?? 999)));
-  const pick = open[open.length - 1] || list[list.length - 1];
-  if (!pick) throw new Error('tidak ada lokasi mining yang tersedia');
+
+  const [locData, me] = await Promise.all([api('/mining/locations'), api('/user/me').catch(() => null)]);
+  const list = arr(locData);
+  if (!list.length) throw new Error('tidak ada lokasi mining');
+
+  const lvl = me?.level ?? me?.playerLevel ?? me?.user?.level ?? me?.progress?.level ?? null;
+  const reqOf = (l) => l.requiredLevel ?? l.levelRequired ?? l.minLevel ?? 0;
+
+  let ok = list.filter((l) => l.unlocked !== false);
+  if (lvl != null) ok = ok.filter((l) => reqOf(l) <= Number(lvl));
+  // urutkan naik, ambil yang paling tinggi yang masih terjangkau
+  ok.sort((a, b) => reqOf(a) - reqOf(b));
+  const pick = ok[ok.length - 1] || list.slice().sort((a, b) => reqOf(a) - reqOf(b))[0];
   return { locationId: pick.id, strategy: ENV.MINING_STRATEGY };
 }
 
