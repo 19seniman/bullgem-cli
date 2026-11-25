@@ -258,18 +258,42 @@ const isReady = (p) => p.status === 'ready' || p.status === 'completed' || (p.en
 
 async function claimAll() {
   const data = await api('/mining/positions');
-  const list = Array.isArray(data) ? data : data?.positions || data?.data || [];
+  const list = arr(data, 'positions');
   let claimed = 0;
   for (const p of list.filter(isReady)) {
     try {
       const r = await api(`/mining/positions/${p.id}/claim`, { method: 'POST' });
       claimed++;
-      console.log(`claim ${p.id} → ${JSON.stringify(r).slice(0, 120)}`);
+      const g = r?.gems ?? r?.rewards?.gems ?? r?.totalGems;
+      const loot = r?.items || r?.rewards?.items || r?.drops;
+      const sum = [
+        g != null ? `${g} GEMS` : null,
+        Array.isArray(loot) && loot.length ? `${loot.length} item` : null,
+      ].filter(Boolean).join(' · ');
+      console.log(`collect rewards · ${p.locationName || p.locationId || p.id} ✓${sum ? ' · ' + sum : ''}`);
+      if (!sum) console.log('   ' + JSON.stringify(r).slice(0, 160));
     } catch (e) {
-      console.log(`claim ${p.id} gagal: ${e.message}`);
+      console.log(`collect ${p.id} ✗ ${e.message}`);
     }
   }
   return claimed;
+}
+
+async function collectChests() {
+  const list = arr(await api('/chests').catch(() => null), 'chests');
+  let n = 0;
+  for (const c of list) {
+    if (c.locked === true || c.opened === true) continue;
+    if (c.opensAt && new Date(c.opensAt) > new Date()) continue;
+    try {
+      await api(`/chests/${c.id}/open`, { method: 'POST' });
+      n++;
+      console.log(`chest ${c.name || c.id} dibuka ✓`);
+    } catch (e) {
+      console.log(`chest ${c.id} ✗ ${e.message}`);
+    }
+  }
+  return n;
 }
 
 const pick = (o, keys) => {
@@ -342,6 +366,7 @@ async function miningLoop() {
   for (;;) {
     try {
       await claimAll();
+      await collectChests();
       const data = await api('/mining/positions');
       const list = Array.isArray(data) ? data : data?.positions || data?.data || [];
       const active = list.filter((p) => !isReady(p));
@@ -432,6 +457,11 @@ try {
   } else if (cmd === 'quests') {
     await ensureLogin();
     await quests(has('--auto'), arg('--tweet-url', ''));
+  } else if (cmd === 'collect') {
+    await ensureLogin();
+    const n = await claimAll();
+    const c = await collectChests();
+    console.log(`selesai · ${n} posisi, ${c} chest`);
   } else if (cmd === 'spots') {
     await ensureLogin();
     const loc = arg('--location') || ENV.MINING_LOCATION;
@@ -494,7 +524,8 @@ try {
   node bullgem.js positions          posisi mining aktif
   node bullgem.js quests             daftar quest
   node bullgem.js quests --auto      start & claim semua yang bisa
-  node bullgem.js mine --once        klaim yang siap, lalu mulai satu posisi
+  node bullgem.js collect            collect rewards + buka chest sekarang
+  node bullgem.js mine --once        collect, lalu mulai satu posisi
   node bullgem.js mine               loop mining (claim → start → tunggu)
   node bullgem.js auto               quest otomatis + loop mining
   node bullgem.js whoami             cek sesi tersimpan
