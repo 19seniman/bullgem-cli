@@ -51,24 +51,28 @@ termux-wake-lock
 node bullgem.js auto
 ```
 
-## Alur "Enter mine"
+## Alur "Enter mine" + "Start digging"
 
-`mine` sekarang masuk ke tambang secara otomatis sebelum mulai:
+`mine` menentukan cave dari kondisi akun, bukan menebak:
 
-1. `GET /mining/locations` → pilih cave yang `requiredLevel <= level` kamu (yang tertinggi)
-2. `GET /mining/locations/{id}/spots` → pilih spot yang tidak terkunci
-3. `POST /mining/positions` `{locationId, spotId, strategy}` → posisi mining dibuat
-4. tunggu `endsAt` → `POST /mining/positions/{id}/claim`
+1. `GET /user/me` → ambil `level`, `miningPower`, `energy` (script mencoba beberapa nama field: `energy`, `energyPoints`, `stats.energy`, …)
+2. `GET /mining/locations` → saring: `levelRequired <= level`, `miningPowerRequired <= power`, **`energyCost <= energy`**
+3. pilih yang `durationSeconds` paling panjang di antara yang terjangkau (reward terbaik)
+4. **Enter mine** → `GET /mining/locations/{id}/spots`, pilih spot yang tidak terkunci dan cocok level/power
+5. **Start digging** → `POST /mining/positions {locationId, spotId, strategy}`
+6. tunggu `endsAt` → `POST /mining/positions/{id}/claim` → ulang
 
-Kalau server menolak spot (`400`), script mencoba 3 spot lain di cave yang sama; kalau yang kurang level, dia turun ke cave lebih rendah.
-
-Lihat spot yang tersedia:
+Kalau energy tidak cukup untuk cave termurah, loop **tidak** memaksa masuk: dia menghitung kekurangan EP (refill 1 EP / 2 menit) lalu menunggu selama itu.
 
 ```bash
-node bullgem.js spots --location <id_cave>
+node bullgem.js status              # level · energy · power
+node bullgem.js locations           # daftar cave + biaya EP
+node bullgem.js spots --location X  # daftar spot
+node bullgem.js mine --once         # satu siklus
+node bullgem.js mine                # loop
 ```
 
-Untuk memaksa spot tertentu, isi `.env`: `MINING_SPOT=<id>`.
+Override manual: `MINING_LOCATION`, `MINING_SPOT`, `MINING_STRATEGY` di `.env`.
 
 ## Login pakai JWT (tanpa private key)
 
