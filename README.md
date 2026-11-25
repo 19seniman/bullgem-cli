@@ -30,7 +30,6 @@ cp .env.example .env
 
 ```ini
 JWT=eyJhbGciOi...
-CF_COOKIES=cf_clearance=...; __cf_bm=...
 ```
 
 Cek koneksi:
@@ -64,13 +63,9 @@ Semua daftar tampil sebagai tabel, bukan JSON mentah:
 
 Perintah yang memakai tabel: `status`, `locations`, `spots`, `positions`, `quests`.
 
-## Menjalankan
+## Menjalankan script
 
 ```bash
-node bullgem.js status             # gems · energy · power · level
-node bullgem.js quests --auto      # kerjakan + klaim quest
-node bullgem.js collect            # collect rewards + buka chest
-node bullgem.js mine               # loop: collect → enter mine → start digging
 node bullgem.js auto               # quest otomatis + loop mining
 ```
 
@@ -84,29 +79,6 @@ Hentikan dengan `Ctrl+C`.
 4. **Enter mine** → `GET /mining/locations/{id}/spots` → pilih spot terbaik yang terjangkau
 5. **Start digging** → `POST /mining/positions {locationId, spotId, strategy}`
 6. tunggu `endsAt` → **collect** → ulangi
-
-Energy tidak cukup? Script tidak memaksa masuk: dia menghitung kekurangan EP (refill 1 EP / 2 menit) lalu menunggu.
-
-```bash
-node bullgem.js locations           # daftar cave + biaya EP
-node bullgem.js spots --location X  # daftar pintu masuk
-node bullgem.js mine --once         # satu siklus saja
-```
-
-Override: `MINING_LOCATION`, `MINING_SPOT`, `MINING_STRATEGY` di `.env`.
-
-## Collect rewards otomatis
-
-Setiap siklus, sebelum digging baru:
-
-1. posisi `ready`/`completed` atau `endsAt` lewat → `POST /mining/positions/{id}/claim`
-2. chest tersedia → `POST /chests/{id}/open` (melewati yang terkunci)
-3. baru masuk mine berikutnya
-
-```
-collect rewards · Greenstone Quarry ✓  gemsEarned 18.9
-chest silver-01 dibuka ✓
-```
 
 ## Anti-bot / keamanan akun
 
@@ -154,8 +126,6 @@ Base: `https://gemapi.bullshot.io/api`
 | Quest mulai | POST | `/quests/start` | `{questId}` |
 | Quest klaim | POST | `/quests/claim` | `{questId, tweetUrl}` |
 | Chest | GET/POST | `/chests`, `/chests/{id}/open` | — |
-
-Auth: `Authorization: Bearer <JWT>` (localStorage `rg_jwt_token`).
 
 ## Catatan
 
