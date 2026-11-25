@@ -147,7 +147,9 @@ const gems = (n) => (typeof n === 'number' ? n.toLocaleString('id-ID') : n);
 async function status() {
   const [bal, me] = await Promise.all([api('/user/balance'), api('/user/me').catch(() => null)]);
   console.log('akun   :', loadTokens().account || '-');
-  console.log('balance:', JSON.stringify(bal));
+  const gems = bal?.gems ?? bal?.balance?.gems;
+  if (gems != null) console.log('gems   :', gems);
+  else console.log('balance:', JSON.stringify(bal));
   if (me) {
     const st = await walletState();
     console.log('profil :', me.handle || me.username || me.id || '-', '· level', st.level ?? '?');
@@ -197,9 +199,9 @@ async function pickSpot(locationId) {
   const free = spots.filter((sp) => sp.locked !== true && (!lvl || reqLvl(sp) <= lvl) && (!pw || reqPow(sp) <= pw));
   const pool = free.length ? free : spots.filter((sp) => sp.locked !== true);
   const list = pool.length ? pool : spots;
-  // ambil yang paling "berat" (biasanya drop lebih baik) tapi tanpa requirement power tertinggi
-  list.sort((a, b) => power(a) - power(b));
-  return list[Math.min(1, list.length - 1)] || list[0];
+  // spot terbaik = requirement power tertinggi yang masih terjangkau (biasanya vein lebih kaya)
+  list.sort((a, b) => power(b) - power(a));
+  return list[0];
 }
 
 /* ---------- mining ---------- */
@@ -217,9 +219,11 @@ async function mineOnce({ locationId, spotId, strategy }) {
     }
   }
   try {
-    const pos = await api('/mining/positions', { method: 'POST', body });
-    console.log(`start digging · ${pos.locationName || locationId} · id ${pos.id} · ends ${pos.endsAt || '?'}`);
-    return pos;
+    const raw = await api('/mining/positions', { method: 'POST', body });
+    const pos = raw?.position || raw?.data || raw || {};
+    const pid = pos.id ?? pos.positionId ?? raw.id ?? raw.positionId;
+    console.log(`start digging · ${pos.locationName || pos.spotId || locationId} · id ${pid ?? '?'} · ends ${pos.endsAt || pos.finishesAt || '?'}`);
+    return raw;
   } catch (e) {
     // spot ditolak → coba spot lain di cave yang sama
     if (e.status === 400 && body.spotId && !/level/i.test(e.message)) {
