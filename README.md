@@ -51,6 +51,31 @@ termux-wake-lock
 node bullgem.js auto
 ```
 
+## Kalau kena 403 Cloudflare
+
+`gemapi.bullshot.io` dilindungi Cloudflare, jadi `fetch` dari Node (tanpa browser) ditolak walaupun dari jaringan rumah. Dua cara yang sah:
+
+**A. Userscript di browser (disarankan)**
+
+`bullgem.user.js` berjalan **di dalam** halaman gem.bullshot.io, memakai sesi login web-mu, jadi tidak ada Cloudflare yang dilewati.
+
+1. Install ekstensi **Tampermonkey**
+2. Buka dashboard Tampermonkey → **+** (script baru) → tempel isi `bullgem.user.js` → **Ctrl+S**
+3. Buka `https://gem.bullshot.io`, login seperti biasa
+4. Panel kecil di kanan bawah → **start**
+
+Panel itu akan: klaim posisi yang siap → mulai posisi baru kalau kosong → kerjakan quest, tiap 45 detik.
+
+**B. Cookie `cf_clearance` untuk CLI**
+
+Ambil cookie dari browser (DevTools → Application → Cookies → `gemapi.bullshot.io`), lalu isi `.env`:
+
+```ini
+CF_CLEARANCE=isi-cookie-di-sini
+```
+
+Batasan: berlaku ±30 menit, terikat IP dan User-Agent yang sama. Kalau habis, isi ulang. Ini memakai sesi browser-mu sendiri, bukan menembus proteksi.
+
 ## API yang dipakai (hasil baca bundle produksi)
 
 Base: `https://gemapi.bullshot.io/api`

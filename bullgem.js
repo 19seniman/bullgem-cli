@@ -49,13 +49,19 @@ function saveTokens(t) {
 /* ---------- http ---------- */
 async function api(endpoint, { method = 'GET', body, auth = true } = {}) {
   const t = loadTokens();
-  const headers = { accept: 'application/json', origin: 'https://gem.bullshot.io', referer: 'https://gem.bullshot.io/' };
+  const headers = {
+    accept: 'application/json',
+    origin: 'https://gem.bullshot.io',
+    referer: 'https://gem.bullshot.io/',
+    'user-agent': ENV.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  };
+  if (ENV.CF_CLEARANCE) headers.cookie = `cf_clearance=${ENV.CF_CLEARANCE}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (auth && t.token) headers.authorization = `Bearer ${t.token}`;
   const res = await fetch(API + endpoint, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   if (text.trimStart().startsWith('<!')) {
-    const err = new Error(`HTTP ${res.status} — Cloudflare memblokir request (halaman HTML, bukan JSON).`);
+    const err = new Error(`HTTP ${res.status} — Cloudflare memblokir request (halaman HTML, bukan JSON). Lihat opsi di README bagian "Kalau kena Cloudflare".`);
     err.cf = true;
     throw err;
   }
