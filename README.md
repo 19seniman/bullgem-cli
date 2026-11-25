@@ -30,15 +30,6 @@ nano .env
 JWT=eyJhbGciOi...
 ```
 
-Cek koneksi:
-
-```bash
-node bullgem.js debug     # harapan: HTTP 200 · application/json
-node bullgem.js status
-```
-
-Kalau `debug` membalas **401**, JWT kedaluwarsa — ambil ulang. Kalau **403**, cookie Cloudflare kedaluwarsa (±30 menit) — ambil ulang. Ambil keduanya sekaligus supaya tidak bolak-balik.
-
 ## Auto upgrade
 
 Upgrade dibeli otomatis dari gems sebelum memilih cave berikutnya.
