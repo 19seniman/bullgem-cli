@@ -1,0 +1,20 @@
+{
+  "name": "bullgem-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bullgem (gem.bullshot.io) CLI — wallet/email login, auto quests, auto mining",
+  "scripts": {
+    "login": "node bullgem.js login",
+    "status": "node bullgem.js status",
+    "mine": "node bullgem.js mine",
+    "quests": "node bullgem.js quests",
+    "auto": "node bullgem.js auto"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
